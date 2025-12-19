@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  password          String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
+  stripeCustomerId  String?
+  exportCount       Int      @default(0)
+  trialExportUsed   Boolean  @default(false)
+  logs              Log[]
+  exports           Export[]
+}
+
+model Log {
+  id          String       @id @default(uuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime
+  startTime   DateTime
+  endTime     DateTime
+  activityType ActivityType
+  description String       @db.VarChar(120)
+  reference   String?      @db.VarChar(100)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  syncedAt    DateTime?
+  source      LogSource    @default(WEB)
+
+  @@index([userId, date])
+  @@index([userId, createdAt])
+}
+
+model Export {
+  id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate     DateTime
+  endDate       DateTime
+  format        ExportFormat
+  createdAt     DateTime   @default(now())
+  pdfUrl        String?
+  textContent   String?    @db.Text
+
+  @@index([userId, createdAt])
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+enum ActivityType {
+  WORK
+  MEETING
+  FIELD
+  TRAVEL
+  ADMIN
+}
+
+enum LogSource {
+  WEB
+  MOBILE
+}
+
+enum ExportFormat {
+  PDF
+  TEXT
+}
