@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { LogsService } from '../logs/logs.service';
 import { GenerateExportDto, ExportFormat } from './exports.dto';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class ExportsService {
@@ -116,6 +117,71 @@ export class ExportsService {
     output += `Generated with Evident\n`;
 
     return output;
+  }
+
+  async generatePdfBuffer(userId: string, dto: GenerateExportDto): Promise<Buffer> {
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    const logs = await this.logsService.findByDateRange(userId, startDate, endDate);
+
+    const formatDate = (d: Date) => d.toLocaleDateString('en-US', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    });
+    const formatTime = (d: Date) => d.toLocaleTimeString('en-US', { 
+      hour: '2-digit', minute: '2-digit', hour12: false 
+    });
+
+    return new Promise((resolve) => {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks: Buffer[] = [];
+      
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+      doc.fontSize(20).font('Helvetica-Bold').text('Work Summary', { align: 'center' });
+      doc.fontSize(12).font('Helvetica').text(`${formatDate(startDate)} – ${formatDate(endDate)}`, { align: 'center' });
+      doc.moveDown(2);
+
+      if (logs.length === 0) {
+        doc.text('No logs recorded for this period.');
+      } else {
+        const groupedByDate = logs.reduce((acc, log) => {
+          const dateKey = new Date(log.date).toDateString();
+          if (!acc[dateKey]) acc[dateKey] = [];
+          acc[dateKey].push(log);
+          return acc;
+        }, {} as Record<string, any[]>);
+
+        for (const [dateKey, dayLogs] of Object.entries(groupedByDate)) {
+          const date = new Date(dateKey);
+          doc.fontSize(14).font('Helvetica-Bold').text(formatDate(date));
+          doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+          doc.moveDown(0.5);
+
+          for (const log of dayLogs as any[]) {
+            const start = formatTime(new Date(log.startTime));
+            const end = formatTime(new Date(log.endTime));
+            const activity = log.activityType.charAt(0) + log.activityType.slice(1).toLowerCase();
+            
+            doc.fontSize(11).font('Helvetica-Bold').text(`${start} – ${end}  [${activity}]`, { continued: false });
+            doc.fontSize(11).font('Helvetica').text(`  ${log.description}`);
+            if (log.reference) {
+              doc.fontSize(10).fillColor('#666666').text(`  Ref: ${log.reference}`);
+              doc.fillColor('#000000');
+            }
+            doc.moveDown(0.5);
+          }
+          doc.moveDown();
+        }
+      }
+
+      doc.moveDown(2);
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor('#888888').text('Generated with Evident', { align: 'center' });
+
+      doc.end();
+    });
   }
 
   async generatePdfHtml(userId: string, dto: GenerateExportDto): Promise<string> {

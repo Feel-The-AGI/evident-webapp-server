@@ -4,7 +4,7 @@ import { ExportsService } from './exports.service';
 import { GenerateExportDto, ExportFormat } from './exports.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import puppeteer from 'puppeteer';
+import PDFDocument from 'pdfkit';
 
 @Controller('exports')
 @UseGuards(JwtAuthGuard)
@@ -25,22 +25,8 @@ export class ExportsController {
     @Body() dto: GenerateExportDto,
     @Res() res: Response,
   ) {
-    const html = await this.exportsService.generatePdfHtml(user.id, dto);
+    const pdfData = await this.exportsService.generatePdfBuffer(user.id, dto);
     
-    const browser = await puppeteer.launch({ 
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    
-    const pdf = await page.pdf({
-      format: 'A4',
-      margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
-    });
-    
-    await browser.close();
-
     const startDate = new Date(dto.startDate).toISOString().split('T')[0];
     const endDate = new Date(dto.endDate).toISOString().split('T')[0];
     
@@ -49,7 +35,7 @@ export class ExportsController {
       'Content-Disposition': `attachment; filename="evident-summary-${startDate}-to-${endDate}.pdf"`,
     });
     
-    res.send(pdf);
+    res.send(pdfData);
 
     await this.exportsService.generate(user.id, { ...dto, format: ExportFormat.PDF });
   }
